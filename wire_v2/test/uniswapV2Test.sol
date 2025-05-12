@@ -76,7 +76,24 @@ contract UniwapV2PairTest is Test{
         assertEq(amount1, 3 ether-1500);
         assertEq(pair.totalSupply(), 1000);
         assertEq(mockToken0.balanceOf(address(this)), 10 ether -1000);
-        assertEq(mockToken1.balanceOf(address(this)), 10 ether -1500);
+        assertEq(mockToken1.balanceOf(address(this)), 10 ether -1500); 
+    }
+
+
+
+    function testSwap() public {
+        mockToken0.transfer(address(pair),1 ether);
+        mockToken1.transfer(address(pair),2 ether);
+        // 添加流动性
+        pair.mint(address(this));
+
+        // 转账给pair
+        mockToken0.transfer(address(pair), 1 ether);
+
+        // 交换
+        pair.swap(address(this), 0, 0.997 ether );
+        assertEq(mockToken0.balanceOf(address(this)), 10 ether -1 ether - 1 ether);
+        assertEq(mockToken1.balanceOf(address(this)), 10 ether -2 ether +  0.997 ether);
     }
 
 }

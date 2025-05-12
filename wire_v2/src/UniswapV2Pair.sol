@@ -18,12 +18,13 @@ contract UniswapV2Pair is ERC20{
 
     }
     //事件
+    event Swap(uint256 balance0Adjusted,uint256 balance1Adjusted,uint256 _reserve0,uint256 _reserve1);
     event Mint(address indexed sender, uint256 amount0, uint256 amount1, address indexed to);
-    event DebugLog(uint256 balance0, uint256 balance1, uint256 amount0, uint256 amount1, uint256 liquidity);
-   // 池子里的token金额
+    event DebugLog(uint256 balance0, uint256 balance1, uint256 amount0, uint256 amount1, uint256 liquidity,uint256 reserve0,uint256 reserve1);
+   // 池子里的token数量
     uint256 private reserve0;
     uint256 private reserve1;
-    // 进来的token金额
+    // 进来的token数量
     address public token0;
     address public token1;
 
@@ -32,6 +33,16 @@ contract UniswapV2Pair is ERC20{
         require(token0==address(0)&&token1==address(0),"Aleardy init");
         token0 = _token0;
         token1 = _token1;
+    }
+    // 更新池子里的token数量
+    function _updata(uint256 _reserve0,uint256 _reserve1) internal{
+        reserve0 = _reserve0;
+        reserve1 = _reserve1;
+    }
+       // 获取池子里面的token数量
+    function getReserve() public view returns(uint256 _reserve0,uint256 _reserve1){
+        _reserve0 = reserve0;
+        _reserve1 = reserve1;
     }
 
     function mint(address to)external returns(uint256 liquidity){
@@ -58,14 +69,13 @@ contract UniswapV2Pair is ERC20{
         }
 
         // 添加调试日志
-        emit DebugLog(balance0, balance1, amount0, amount1, liquidity);
+        emit DebugLog(balance0, balance1, amount0, amount1, liquidity,reserve0,reserve1);
 
        if (liquidity <= 0) revert InsufficientLiquidityMinted();
         // 给用户mint流动性 给LP Token
         _mint(to, liquidity);
         // 更新池子里的token金额
-        reserve0 = balance0;
-        reserve1 = balance1;
+        _updata(balance0, balance1);
         emit Mint(msg.sender,amount0,amount1,to);
         return liquidity;
     }
@@ -86,8 +96,46 @@ contract UniswapV2Pair is ERC20{
         // 转账给用户
         SafeTransferLib.safeTransfer(ERC20(token0), to, amount0);
         SafeTransferLib.safeTransfer(ERC20(token1), to, amount1);
+        // 更新池子里的token金额
+        _updata(balance0 - amount0, balance1 - amount1);
 
         // 添加调试日志
-        emit DebugLog(balance0, balance1, amount0, amount1, liquidity);
+        emit DebugLog(balance0, balance1, amount0, amount1, liquidity,reserve0,reserve1);
+    }
+
+        // 交换代币
+    function swap(address to,uint256 amount0Out,uint256 amount1Out) external {
+        // 检查参数
+        if (amount0Out == 0 &&amount1Out == 0) revert("Invalid amount");
+        
+        (uint256 _reserve0,uint256 _reserve1) = getReserve();
+
+        if (amount0Out > _reserve0 || amount1Out > _reserve1) revert("Insufficient liquidity");
+
+        // 避免重入攻击 转账
+        if (amount0Out > 0) SafeTransferLib.safeTransfer(ERC20(token0), to, amount0Out);
+        if (amount1Out > 0) SafeTransferLib.safeTransfer(ERC20(token1), to, amount1Out);
+        
+
+        uint256 balance0 = IERC20(token0).balanceOf(address(this));
+        uint256 balance1 = IERC20(token1).balanceOf(address(this));
+
+        uint256 amount0In = balance0 > amount0Out ? balance0 - amount0Out : 0;
+        uint256 amount1In = balance1 > amount1Out ? balance1 - amount1Out : 0;
+
+        if (amount0In==0 && amount1In==0) revert("Invalid amount");
+
+        // 收取手续费
+        uint256 balance0Adjusted = (balance0 * 1000) - (amount0In * 3);
+        uint256 balance1Adjusted = (balance1 * 1000) - (amount1In * 3);
+
+        emit Swap(balance0Adjusted,balance1Adjusted,_reserve0,_reserve1);
+        // 前面放大了1000倍
+        if (balance0Adjusted * balance1Adjusted <
+            uint256(_reserve0) * uint256(_reserve1) * (1000**2)) revert("Insufficient liquidity");
+        _updata(IERC20(token0).balanceOf(address(this)),IERC20(token1).balanceOf(address(this)));
+        emit DebugLog(
+            balance0, balance1, amount0In, amount1In, 0, reserve0,reserve1
+        );
     }
 }
